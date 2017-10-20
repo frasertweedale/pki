@@ -19,7 +19,7 @@
 # All rights reserved.
 #
 """
-Module containing crypto classes.
+Module containing crypto classes and functions.
 """
 from __future__ import absolute_import
 import abc
@@ -528,3 +528,121 @@ class CryptographyCryptoProvider(CryptoProvider):
         :param cert_nick  Nickname for the certificate to be returned.
         """
         return self.certs[cert_nick]
+
+
+def sanity_check_ca_certificate(cert):
+    """
+    Sanity check a CA certificate for conformance to RFC 5280.
+
+    :param cert: A python-cryptography ``x509.Certificate``
+    :raises: ``ValueError`` if issues are found
+    :return: a list of warnings about problematic situations
+             that do not violate MUST/REQUIRED clauses in RFC.
+
+    """
+    problems = []
+
+    if not cert.subject:
+        raise ValueError("has empty subject")
+
+    # Basic Constraints
+    # https://tools.ietf.org/html/rfc5280#section-4.2.1.9
+    #
+    # ... MUST appear on CA certificates
+    try:
+        bc = cert.extensions.get_extension_for_class(
+            cryptography.x509.BasicConstraints)
+    except cryptography.x509.ExtensionNotFound:
+        raise ValueError("missing Basic Constraints extension")
+
+    # ... MUST assert cA boolean
+    if not bc.value.ca:
+        raise ValueError("not a CA certificate")
+
+    # ... MUST be critical
+    if not bc.critical:
+        raise ValueError("Basic Constraints extension must be critical")
+
+    # Subject Key Identifier
+    # https://tools.ietf.org/html/rfc5280#section-4.2.1.2
+    #
+    # ... MUST appear
+    try:
+        ski = cert.extensions.get_extension_for_class(
+            cryptography.x509.SubjectKeyIdentifier)
+    except cryptography.x509.ExtensionNotFound:
+        raise ValueError("missing Subject Key Identifier extension")
+
+    # ... MUST be non-critical
+    if ski.critical:
+        raise ValueError(
+            "Subject Key Identifier extension must be non-critical")
+
+    # Authority Key Identifier
+    # https://tools.ietf.org/html/rfc5280#section-4.2.1.1
+    #
+    try:
+        aki = cert.extensions.get_extension_for_class(
+            cryptography.x509.AuthorityKeyIdentifier)
+    except cryptography.x509.ExtensionNotFound:
+        if is_self_signed(cert):
+            aki = None
+        else:
+            # ... MUST appear on non-self-signed certs
+            raise ValueError("missing Authority Key Identifier extension")
+
+    if aki is not None:
+        # ... MUST be non-critical
+        if aki.critical:
+            raise ValueError(
+                "Authority Key Identifier extension must be non-critical")
+
+        # ... MUST include keyIdentifier field
+        if aki.value.key_identifier is None:
+            raise ValueError(
+                "Authority Key Identifier must include keyIdentifier field")
+
+    # Key Usage
+    # https://tools.ietf.org/html/rfc5280#section-4.2.1.3
+    #
+    # ... MUST appear
+    try:
+        ku = cert.extensions.get_extension_for_class(
+            cryptography.x509.KeyUsage)
+    except cryptography.x509.ExtensionNotFound:
+        raise ValueError("missing Key Usage extension")
+
+    # ... SHOULD be critical
+    if not ku.critical:
+        problems.append('Key Usage extension SHOULD be critical')
+
+    # ... must assert keyCertSign
+    if not ku.value.key_cert_sign:
+        raise ValueError("Key Usage does not assert keyCertSign")
+
+    # Authority Information Access
+    # https://tools.ietf.org/html/rfc5280#section-4.2.2.1
+    #
+    # ... if present, MUST be non-critical
+    try:
+        aia = cert.extensions.get_extension_for_class(
+            cryptography.x509.AuthorityInformationAccess)
+    except cryptography.x509.ExtensionNotFound:
+        pass
+    else:
+        if aia.critical:
+            raise ValueError(
+                "Authority Information Access extension must be non-critical")
+
+    return problems
+
+
+def is_self_signed(cert):
+    """
+    Check whether a certificate is self-signed
+
+    :param cert: A python-cryptography ``x509.Certificate``
+    :return: True if this certificate is self-signed, False otherwise
+
+    """
+    return cert.issuer == cert.subject

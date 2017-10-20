@@ -39,6 +39,7 @@ import pki.nssdb
 import pki.server
 import pki.system
 import pki.util
+from pki.crypto import sanity_check_ca_certificate
 
 
 # PKI Deployment Configuration Scriptlet
@@ -411,6 +412,24 @@ class PkiScriptlet(pkiscriptlet.AbstractBasePkiScriptlet):
             nickname=nickname,
             cert_chain_file=cert_file,
             trust_attributes='CT,C,C')
+
+        # sanity check CA cert file
+        #
+        # we don't know whether the file was a single cert or
+        # a PKCS #7 file, so we perform the sanity check after
+        # import; export the CA signing cert and check it.
+        #
+        cert_data = nssdb.get_cert(nickname)
+        if cert_data is None:
+            msg = "failed to load CA certificate for sanity check"
+            config.pki_log.error(msg, extra=config.PKI_INDENTATION_LEVEL_2)
+            raise RuntimeError(msg)
+        else:
+            config.pki_log.info(
+                "sanity checking CA certificate",
+                extra=config.PKI_INDENTATION_LEVEL_2)
+            cert = x509.load_pem_x509_certificate(cert_data, default_backend())
+            sanity_check_ca_certificate(cert)
 
     def import_ca_ocsp_signing_cert(self, deployer, nssdb):
 
