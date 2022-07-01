@@ -206,6 +206,8 @@
                pattern="common"/>
         [PKI_CLOSE_TOMCAT_ACCESS_LOG_COMMENT]
 
+	<Valve className="org.apache.catalina.valves.rewrite.RewriteValve"/>
+
       </Host>
     </Engine>
   </Service>
