@@ -6,12 +6,14 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SignatureException;
 import java.util.Optional;
 
+import javax.servlet.ServletContext;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
 
@@ -34,9 +36,12 @@ public class ESTFrontend {
 
     public static org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ESTFrontend.class);
 
+    @Context
+    ServletContext servletContext;
+
     // shorthand convenience method
     private ESTBackend getBackend() {
-        return ESTEngine.getInstance().getBackend();
+        return ESTEngine.getInstance(servletContext).getBackend();
     }
 
     @GET

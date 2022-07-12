@@ -3,7 +3,9 @@ package org.dogtagpki.est;
 import java.io.File;
 import java.io.FileReader;
 import java.util.Properties;
+import java.util.TreeMap;
 
+import javax.servlet.ServletContext;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 import javax.servlet.annotation.WebListener;
@@ -18,17 +20,18 @@ public class ESTEngine implements ServletContextListener {
 
     private static org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ESTEngine.class);
 
-    private static ESTEngine INSTANCE;
+    // maintain a map of instances indexed by context path
+    private static TreeMap<HostAndContextPath, ESTEngine> INSTANCES = new TreeMap<>();
+
+    public static ESTEngine getInstance(ServletContext servletContext) {
+        return INSTANCES.get(makeKey(servletContext));
+    }
+
+    private static HostAndContextPath makeKey(ServletContext ctx) {
+        return new HostAndContextPath(ctx.getVirtualServerName(), ctx.getContextPath());
+    }
 
     private ESTBackend backend;
-
-    public static ESTEngine getInstance() {
-        return INSTANCE;
-    }
-
-    public ESTEngine() {
-        INSTANCE = this;
-    }
 
     public ESTBackend getBackend() {
         return backend;
@@ -61,12 +64,15 @@ public class ESTEngine implements ServletContextListener {
 
     @Override
     public void contextInitialized(ServletContextEvent event) {
+        String contextPath = event.getServletContext().getContextPath();
         try {
-            start(event.getServletContext().getContextPath());
+            start(contextPath);
         } catch (Throwable e) {
             logger.error("Unable to start EST engine: " + e.getMessage(), e);
             throw new RuntimeException("Unable to start EST engine: " + e.getMessage(), e);
         }
+        // initialization succeeded; add to map
+        INSTANCES.put(makeKey(event.getServletContext()), this);
     }
 
     @Override
@@ -77,6 +83,7 @@ public class ESTEngine implements ServletContextListener {
             logger.error("Unable to stop EST engine: " + e.getMessage(), e);
             throw new RuntimeException("Unable to stop EST engine: " + e.getMessage(), e);
         }
+        INSTANCES.remove(event.getServletContext());
     }
 
     private void initBackend(String filename) throws Throwable {
@@ -100,6 +107,22 @@ public class ESTEngine implements ServletContextListener {
         backend = backendClass.getDeclaredConstructor().newInstance();
         backend.setConfig(config);
         backend.start();
+    }
+
+    private static class HostAndContextPath implements Comparable<HostAndContextPath> {
+        public String host;
+        public String contextPath;
+
+        public HostAndContextPath(String host, String contextPath) {
+            this.host = host;
+            this.contextPath = contextPath;
+        }
+
+        public int compareTo(HostAndContextPath other) {
+            int r = this.host.compareTo(other.host);
+            if (r == 0) r = this.contextPath.compareTo(other.contextPath);
+            return r;
+        }
     }
 
 }
